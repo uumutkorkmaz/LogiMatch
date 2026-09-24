@@ -1,0 +1,1366 @@
+// LogiMatch Prisma şeması — docs/DOMAIN.md ile birebir.
+//
+// Prisma'nın desteklemediği parçalar migration SQL'inde elle eklenir:
+//  - geography(Point,4326) kolonları: lat/lng kolonlarından GENERATED ALWAYS ... STORED
+//  - Shipment çakışma kısıtları: EXCLUDE USING gist (btree_gist)
+//  - partial unique index'ler, append-only trigger'lar, GIST/trigram index'ler
+// Tüm zamanlar timestamptz (UTC), tüm para tutarları Decimal(14,2).
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../generated/client"
+  previewFeatures = ["postgresqlExtensions"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis, btree_gist, pg_trgm, citext]
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum UserRole {
+  SHIPPER_USER
+  CARRIER_USER
+  DRIVER
+  ADMIN
+  OPS
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum Locale {
+  tr
+  en
+}
+
+enum CompanyType {
+  SHIPPER
+  CARRIER
+  BOTH
+}
+
+enum CompanyStatus {
+  ACTIVE
+  UNDER_REVIEW
+  SUSPENDED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum CompanyRole {
+  OWNER
+  MANAGER
+  DISPATCHER
+  ACCOUNTANT
+}
+
+enum DocumentOwnerType {
+  COMPANY
+  VEHICLE
+  TRAILER
+  DRIVER
+  SHIPMENT
+}
+
+enum DocumentType {
+  K1
+  K2
+  K3
+  L1
+  L2
+  C2
+  C3
+  R1
+  R2
+  SRC1
+  SRC2
+  SRC3
+  SRC4
+  SRC5
+  PSIKOTEKNIK
+  ADR_CERTIFICATE
+  DRIVING_LICENSE
+  VEHICLE_LICENSE
+  INSPECTION
+  CMR_INSURANCE
+  CARGO_INSURANCE
+  CARRIER_LIABILITY
+  TAX_CERTIFICATE
+  SIGNATURE_CIRCULAR
+  ACTIVITY_CERTIFICATE
+  TIR_CARNET
+  ATP_CERTIFICATE
+  IRSALIYE
+  POD
+  CMR
+  PASSPORT
+  VISA
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum RequirementScope {
+  DOMESTIC
+  INTERNATIONAL
+  ADR
+  TEMP_CONTROLLED
+}
+
+enum VehicleType {
+  TRACTOR
+  TRUCK
+  VAN
+  LIGHT_TRUCK
+}
+
+enum AssetStatus {
+  ACTIVE
+  IN_SERVICE
+  INACTIVE
+}
+
+enum DriverStatus {
+  ACTIVE
+  ON_LEAVE
+  INACTIVE
+}
+
+enum TrailerType {
+  TENTELI
+  KAPALI_KASA
+  FRIGORIFIK
+  ACIK_PLATFORM
+  LOWBED
+  DAMPERLI
+  SILOBAS
+  TANKER
+  KONTEYNER_SASI
+  KIRKAYAK
+  JUMBO
+  MEGA
+  FRIGO_ATP
+  HAYVAN_NAKLIYE
+  OTO_TASIYICI
+  VINCLI
+}
+
+enum TrailerFeature {
+  TAIL_LIFT
+  CRANE
+  ADR
+  TEMP_CONTROLLED
+  GPS
+  DOUBLE_DECK
+  SIDE_OPENING
+  TOP_OPENING
+}
+
+enum StopType {
+  PICKUP
+  DELIVERY
+}
+
+enum PalletType {
+  EUR
+  IND
+}
+
+enum HandlingMethod {
+  RAMPA
+  VINC
+  FORKLIFT
+  ELLE
+}
+
+enum TransportScope {
+  DOMESTIC
+  INTERNATIONAL
+}
+
+enum PricingMode {
+  FIXED
+  OPEN_TO_OFFER
+}
+
+enum Currency {
+  TRY
+  EUR
+  USD
+}
+
+enum PaymentTerm {
+  PESIN
+  VADELI_30
+  VADELI_60
+  KAPIDA
+}
+
+enum LoadStatus {
+  DRAFT
+  PUBLISHED
+  MATCHING
+  OFFERED
+  ASSIGNED
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum Visibility {
+  PUBLIC
+  INVITED_ONLY
+}
+
+enum ModerationStatus {
+  NOT_REQUIRED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum GeocodeStatus {
+  OK
+  FAILED
+  MANUAL_PIN
+}
+
+enum RouteStatus {
+  PENDING
+  OK
+  ROUTE_NOT_FOUND
+}
+
+enum TruckPostingStatus {
+  DRAFT
+  ACTIVE
+  RESERVED
+  EXPIRED
+  CANCELLED
+}
+
+enum MatchDirection {
+  SYSTEM
+  LOAD_INITIATED
+  TRUCK_INITIATED
+}
+
+enum MatchStatus {
+  SUGGESTED
+  VIEWED
+  INTERESTED_BY_SHIPPER
+  INTERESTED_BY_CARRIER
+  MUTUAL
+  DISMISSED
+  EXPIRED
+}
+
+enum PartySide {
+  SHIPPER
+  CARRIER
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COUNTERED
+  EXPIRED
+  WITHDRAWN
+}
+
+enum ShipmentStatus {
+  ASSIGNED
+  AT_PICKUP
+  LOADED
+  IN_TRANSIT
+  AT_DELIVERY
+  DELIVERED
+  POD_SUBMITTED
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+enum CommissionModel {
+  SHIPPER_PAYS
+  CARRIER_PAYS
+  SPLIT
+}
+
+enum CancelledBy {
+  SHIPPER
+  CARRIER
+  PLATFORM
+}
+
+enum ShipmentEventType {
+  STATUS_CHANGED
+  DEPARTED_TO_PICKUP
+  NOTE
+  DOCUMENT_ADDED
+  DELAY_REPORTED
+  CANCELLED
+  DISPUTE_OPENED
+  DISPUTE_RESOLVED
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED
+}
+
+enum ConversationContext {
+  MATCH
+  SHIPMENT
+}
+
+enum InvoiceKind {
+  TRANSPORT
+  COMMISSION
+  CANCELLATION_FEE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+  DEAD
+}
+
+enum RiskFlagType {
+  DUPLICATE_TAX_NUMBER
+  DUPLICATE_PHONE
+  DUPLICATE_IBAN
+  CONTACT_LEAK
+  NO_SHOW_STREAK
+  LISTING_REVIEW
+  PRICE_ANOMALY
+}
+
+enum RiskFlagStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum OtpPurpose {
+  VERIFY_EMAIL
+  VERIFY_PHONE
+  RESET_PASSWORD
+}
+
+enum IdempotencyState {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum OutboxStatus {
+  PENDING
+  DISPATCHED
+  FAILED
+}
+
+// ───────────────────────── Kimlik ve organizasyon ─────────────────────────
+
+model User {
+  id               String     @id @default(uuid(7)) @db.Uuid
+  email            String     @unique @db.Citext
+  phone            String?    @unique
+  passwordHash     String
+  fullName         String?
+  role             UserRole
+  status           UserStatus @default(PENDING)
+  locale           Locale     @default(tr)
+  emailVerifiedAt  DateTime?  @db.Timestamptz(3)
+  phoneVerifiedAt  DateTime?  @db.Timestamptz(3)
+  lastLoginAt      DateTime?  @db.Timestamptz(3)
+  failedLoginCount Int        @default(0)
+  lockedUntil      DateTime?  @db.Timestamptz(3)
+  anonymizedAt     DateTime?  @db.Timestamptz(3)
+  createdAt        DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime   @updatedAt @db.Timestamptz(3)
+  deletedAt        DateTime?  @db.Timestamptz(3)
+
+  memberships   CompanyMember[] @relation("MemberUser")
+  refreshTokens RefreshToken[]
+  otps          OtpChallenge[]
+  driver        Driver?
+  notifications Notification[]
+  messages      Message[]
+
+  @@index([status])
+}
+
+model Company {
+  id                    String             @id @default(uuid(7)) @db.Uuid
+  legalName             String
+  tradeName             String?
+  taxOffice             String
+  taxNumber             String
+  mersisNo              String?
+  address               String
+  city                  String
+  district              String?
+  country               String             @default("TR") @db.Char(2)
+  phone                 String?
+  email                 String?            @db.Citext
+  iban                  String?
+  type                  CompanyType
+  verificationStatus    VerificationStatus @default(UNVERIFIED)
+  verifiedAt            DateTime?          @db.Timestamptz(3)
+  status                CompanyStatus      @default(ACTIVE)
+  listingsReviewedCount Int                @default(0)
+  complianceValidUntil  DateTime?          @db.Timestamptz(3)
+  intlValidUntil        DateTime?          @db.Timestamptz(3)
+  homeLat               Float?
+  homeLng               Float?
+  createdAt             DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime           @updatedAt @db.Timestamptz(3)
+  deletedAt             DateTime?          @db.Timestamptz(3)
+
+  members            CompanyMember[]
+  vehicles           Vehicle[]
+  trailers           Trailer[]
+  drivers            Driver[]
+  loads              Load[]
+  truckPostings      TruckPosting[]
+  shipmentsAsShipper Shipment[]      @relation("ShipmentShipper")
+  shipmentsAsCarrier Shipment[]      @relation("ShipmentCarrier")
+  ratingsGiven       Rating[]        @relation("RatingRater")
+  ratingsReceived    Rating[]        @relation("RatingRated")
+  blocking           BlockList[]     @relation("Blocker")
+  blockedBy          BlockList[]     @relation("Blocked")
+  riskFlags          RiskFlag[]
+  stats              CompanyStats?
+  documents          Document[]
+
+  @@index([taxNumber])
+  @@index([phone])
+  @@index([iban])
+  @@index([type, verificationStatus, status])
+  @@index([legalName(ops: raw("gin_trgm_ops"))], map: "Company_legalName_trgm", type: Gin)
+}
+
+model CompanyMember {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  userId      String      @db.Uuid
+  companyId   String      @db.Uuid
+  companyRole CompanyRole
+  invitedById String?     @db.Uuid
+  acceptedAt  DateTime?   @db.Timestamptz(3)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+
+  user    User    @relation("MemberUser", fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+}
+
+model Document {
+  id              String            @id @default(uuid(7)) @db.Uuid
+  ownerType       DocumentOwnerType
+  ownerId         String            @db.Uuid
+  companyId       String            @db.Uuid
+  type            DocumentType
+  fileKey         String
+  fileName        String
+  mimeType        String
+  sizeBytes       Int
+  checksumSha256  String
+  number          String?
+  issuedAt        DateTime?         @db.Timestamptz(3)
+  expiresAt       DateTime?         @db.Timestamptz(3)
+  status          DocumentStatus    @default(PENDING)
+  uploadedById    String            @db.Uuid
+  reviewedById    String?           @db.Uuid
+  reviewedAt      DateTime?         @db.Timestamptz(3)
+  rejectionReason String?
+  supersedesId    String?           @db.Uuid
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime?         @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([ownerType, ownerId])
+  @@index([companyId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([type])
+}
+
+model RequiredDocumentRule {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  ownerType   DocumentOwnerType
+  scope       RequirementScope
+  anyOf       DocumentType[]
+  description String
+  active      Boolean           @default(true)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+
+  @@index([ownerType, scope, active])
+}
+
+model BlockList {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  blockerCompanyId String   @db.Uuid
+  blockedCompanyId String   @db.Uuid
+  reason           String?
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  blocker Company @relation("Blocker", fields: [blockerCompanyId], references: [id])
+  blocked Company @relation("Blocked", fields: [blockedCompanyId], references: [id])
+
+  @@unique([blockerCompanyId, blockedCompanyId])
+  @@index([blockedCompanyId])
+}
+
+model RiskFlag {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  type         RiskFlagType
+  entityType   String
+  entityId     String         @db.Uuid
+  companyId    String?        @db.Uuid
+  details      Json           @default("{}")
+  status       RiskFlagStatus @default(OPEN)
+  resolvedById String?        @db.Uuid
+  resolution   String?
+  resolvedAt   DateTime?      @db.Timestamptz(3)
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+
+  company Company? @relation(fields: [companyId], references: [id])
+
+  @@index([status, type])
+  @@index([companyId])
+  @@index([entityType, entityId])
+}
+
+// ───────────────────────────── Filo ─────────────────────────────
+
+model Vehicle {
+  id                   String      @id @default(uuid(7)) @db.Uuid
+  carrierCompanyId     String      @db.Uuid
+  plate                String
+  plateNormalized      String      @unique
+  type                 VehicleType
+  brand                String
+  model                String
+  year                 Int
+  euroNorm             String?
+  status               AssetStatus @default(ACTIVE)
+  complianceValidUntil DateTime?   @db.Timestamptz(3)
+  createdAt            DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime    @updatedAt @db.Timestamptz(3)
+  deletedAt            DateTime?   @db.Timestamptz(3)
+
+  carrierCompany Company        @relation(fields: [carrierCompanyId], references: [id])
+  truckPostings  TruckPosting[]
+  shipments      Shipment[]
+
+  @@index([carrierCompanyId])
+  @@index([status])
+}
+
+model Trailer {
+  id                   String           @id @default(uuid(7)) @db.Uuid
+  carrierCompanyId     String           @db.Uuid
+  plate                String
+  plateNormalized      String           @unique
+  trailerType          TrailerType
+  isIntegratedBody     Boolean          @default(false)
+  capacityKg           Int
+  volumeM3             Float
+  lengthCm             Int
+  widthCm              Int
+  heightCm             Int
+  loadingMeters        Float
+  palletCapacity       Int
+  axleCount            Int
+  features             TrailerFeature[]
+  minTempC             Float?
+  maxTempC             Float?
+  status               AssetStatus      @default(ACTIVE)
+  complianceValidUntil DateTime?        @db.Timestamptz(3)
+  adrValidUntil        DateTime?        @db.Timestamptz(3)
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+  deletedAt            DateTime?        @db.Timestamptz(3)
+
+  carrierCompany Company        @relation(fields: [carrierCompanyId], references: [id])
+  truckPostings  TruckPosting[]
+  shipments      Shipment[]
+
+  @@index([carrierCompanyId])
+  @@index([trailerType])
+  @@index([features], type: Gin)
+}
+
+model Driver {
+  id                   String                                @id @default(uuid(7)) @db.Uuid
+  userId               String?                               @unique @db.Uuid
+  carrierCompanyId     String                                @db.Uuid
+  fullName             String
+  phone                String?
+  licenseClasses       String[]
+  srcTypes             String[]
+  adrClasses           String[]
+  hasPsikoteknik       Boolean                               @default(false)
+  passportNumber       String?
+  passportValidUntil   DateTime?                             @db.Timestamptz(3)
+  visaCountries        String[]
+  homeBaseLat          Float?
+  homeBaseLng          Float?
+  homeBaseLocation     Unsupported("geography(Point,4326)")?
+  status               DriverStatus                          @default(ACTIVE)
+  complianceValidUntil DateTime?                             @db.Timestamptz(3)
+  adrValidUntil        DateTime?                             @db.Timestamptz(3)
+  intlValidUntil       DateTime?                             @db.Timestamptz(3)
+  createdAt            DateTime                              @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                              @updatedAt @db.Timestamptz(3)
+  deletedAt            DateTime?                             @db.Timestamptz(3)
+
+  user           User?          @relation(fields: [userId], references: [id])
+  carrierCompany Company        @relation(fields: [carrierCompanyId], references: [id])
+  truckPostings  TruckPosting[]
+  shipments      Shipment[]
+
+  @@index([carrierCompanyId])
+  @@index([homeBaseLocation], map: "Driver_homeBaseLocation_gist", type: Gist)
+}
+
+// ───────────────────────────── Yük ─────────────────────────────
+
+model Load {
+  id               String @id @default(uuid(7)) @db.Uuid
+  referenceNo      String @unique
+  shipperCompanyId String @db.Uuid
+  createdByUserId  String @db.Uuid
+
+  pickupAddress     String
+  pickupCity        String
+  pickupDistrict    String?
+  pickupCountry     String                                @default("TR") @db.Char(2)
+  pickupLat         Float?
+  pickupLng         Float?
+  pickupLocation    Unsupported("geography(Point,4326)")?
+  pickupWindowStart DateTime                              @db.Timestamptz(3)
+  pickupWindowEnd   DateTime                              @db.Timestamptz(3)
+
+  deliveryAddress     String
+  deliveryCity        String
+  deliveryDistrict    String?
+  deliveryCountry     String                                @default("TR") @db.Char(2)
+  deliveryLat         Float?
+  deliveryLng         Float?
+  deliveryLocation    Unsupported("geography(Point,4326)")?
+  deliveryWindowStart DateTime                              @db.Timestamptz(3)
+  deliveryWindowEnd   DateTime                              @db.Timestamptz(3)
+
+  cargoType        String
+  cargoDescription String?
+  weightKg         Int
+  volumeM3         Float?
+  loadingMeters    Float?
+  palletCount      Int?
+  palletType       PalletType?
+  isStackable      Boolean     @default(false)
+  isFragile        Boolean     @default(false)
+  declaredValue    Decimal?    @db.Decimal(14, 2)
+  maxPieceLengthCm Int?
+  maxPieceWidthCm  Int?
+  maxPieceHeightCm Int?
+
+  requiredTrailerTypes TrailerType[]
+  requiredFeatures     TrailerFeature[]
+
+  isAdr        Boolean @default(false)
+  adrClass     String?
+  unNumber     String?
+  packingGroup String?
+
+  requiresTempControl Boolean @default(false)
+  minTempC            Float?
+  maxTempC            Float?
+
+  loadingMethod   HandlingMethod?
+  unloadingMethod HandlingMethod?
+
+  transportScope  TransportScope @default(DOMESTIC)
+  customsRequired Boolean        @default(false)
+  incoterm        String?
+
+  pricingMode        PricingMode
+  budgetMin          Decimal?    @db.Decimal(14, 2)
+  budgetMax          Decimal?    @db.Decimal(14, 2)
+  currency           Currency    @default(TRY)
+  paymentTerm        PaymentTerm @default(VADELI_30)
+  vatRate            Decimal     @default(0.20) @db.Decimal(5, 4)
+  withholdingApplies Boolean     @default(false)
+  estimatedPriceMin  Decimal?    @db.Decimal(14, 2)
+  estimatedPriceMax  Decimal?    @db.Decimal(14, 2)
+
+  routeDistanceKm  Float?
+  routeDurationMin Int?
+  routeStatus      RouteStatus   @default(PENDING)
+  geocodeStatus    GeocodeStatus @default(OK)
+
+  status                   LoadStatus       @default(DRAFT)
+  visibility               Visibility       @default(PUBLIC)
+  moderationStatus         ModerationStatus @default(NOT_REQUIRED)
+  invitedCarrierCompanyIds String[]         @db.Uuid
+  expiresAt                DateTime?        @db.Timestamptz(3)
+  publishedAt              DateTime?        @db.Timestamptz(3)
+  cancelledAt              DateTime?        @db.Timestamptz(3)
+  cancellationReason       String?
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  shipperCompany Company    @relation(fields: [shipperCompanyId], references: [id])
+  stops          LoadStop[]
+  matches        Match[]
+  offers         Offer[]
+  shipments      Shipment[]
+
+  @@index([shipperCompanyId])
+  @@index([status, pickupWindowStart])
+  @@index([pickupCity])
+  @@index([deliveryCity])
+  @@index([transportScope])
+  @@index([moderationStatus])
+  @@index([requiredTrailerTypes], type: Gin)
+  @@index([pickupLocation], map: "Load_pickupLocation_gist", type: Gist)
+  @@index([deliveryLocation], map: "Load_deliveryLocation_gist", type: Gist)
+}
+
+model LoadStop {
+  id            String                                @id @default(uuid(7)) @db.Uuid
+  loadId        String                                @db.Uuid
+  sequence      Int
+  type          StopType
+  address       String
+  city          String
+  district      String?
+  country       String                                @default("TR") @db.Char(2)
+  lat           Float?
+  lng           Float?
+  location      Unsupported("geography(Point,4326)")?
+  windowStart   DateTime                              @db.Timestamptz(3)
+  windowEnd     DateTime                              @db.Timestamptz(3)
+  weightKg      Int?
+  volumeM3      Float?
+  loadingMeters Float?
+  palletCount   Int?
+
+  load Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+
+  @@unique([loadId, sequence])
+  @@index([location], map: "LoadStop_location_gist", type: Gist)
+}
+
+// ───────────────────────────── Araç ilanı ─────────────────────────────
+
+model TruckPosting {
+  id               String @id @default(uuid(7)) @db.Uuid
+  referenceNo      String @unique
+  carrierCompanyId String @db.Uuid
+  createdByUserId  String @db.Uuid
+  vehicleId        String @db.Uuid
+  trailerId        String @db.Uuid
+  driverId         String @db.Uuid
+
+  availableFrom  DateTime @db.Timestamptz(3)
+  availableUntil DateTime @db.Timestamptz(3)
+
+  originAddress  String?
+  originCity     String
+  originDistrict String?
+  originCountry  String                                @default("TR") @db.Char(2)
+  originLat      Float
+  originLng      Float
+  originLocation Unsupported("geography(Point,4326)")?
+
+  /// [{ country: "TR", city: "Ankara" | null, lat, lng }]
+  preferredDestinations Json     @default("[]")
+  preferredCities       String[]
+  preferredCountries    String[]
+
+  maxDeadheadKm        Int
+  maxRouteDeviationKm  Int?
+  minPricePerKm        Decimal? @db.Decimal(10, 2)
+  currency             Currency @default(TRY)
+  acceptsAdr           Boolean  @default(false)
+  acceptsPartialLoad   Boolean  @default(false)
+  acceptsInternational Boolean  @default(false)
+  notes                String?
+
+  status      TruckPostingStatus @default(DRAFT)
+  publishedAt DateTime?          @db.Timestamptz(3)
+  pausedAt    DateTime?          @db.Timestamptz(3)
+  cancelledAt DateTime?          @db.Timestamptz(3)
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  carrierCompany Company    @relation(fields: [carrierCompanyId], references: [id])
+  vehicle        Vehicle    @relation(fields: [vehicleId], references: [id])
+  trailer        Trailer    @relation(fields: [trailerId], references: [id])
+  driver         Driver     @relation(fields: [driverId], references: [id])
+  matches        Match[]
+  offers         Offer[]
+  shipments      Shipment[]
+
+  @@index([carrierCompanyId])
+  @@index([vehicleId])
+  @@index([trailerId])
+  @@index([driverId])
+  @@index([status, availableFrom, availableUntil])
+  @@index([preferredCities], type: Gin)
+  @@index([originLocation], map: "TruckPosting_originLocation_gist", type: Gist)
+}
+
+// ─────────────────────── Eşleştirme ve anlaşma ───────────────────────
+
+model Match {
+  id                String         @id @default(uuid(7)) @db.Uuid
+  loadId            String         @db.Uuid
+  truckPostingId    String         @db.Uuid
+  score             Decimal        @db.Decimal(5, 2)
+  scoreBreakdown    Json
+  deadheadKm        Float
+  direction         MatchDirection @default(SYSTEM)
+  status            MatchStatus    @default(SUGGESTED)
+  shipperInterestAt DateTime?      @db.Timestamptz(3)
+  carrierInterestAt DateTime?      @db.Timestamptz(3)
+  viewedByShipperAt DateTime?      @db.Timestamptz(3)
+  viewedByCarrierAt DateTime?      @db.Timestamptz(3)
+  dismissedBy       PartySide?
+  dismissReason     String?
+  matchingConfigId  String?        @db.Uuid
+  version           Int            @default(0)
+  createdAt         DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @db.Timestamptz(3)
+
+  load         Load          @relation(fields: [loadId], references: [id])
+  truckPosting TruckPosting  @relation(fields: [truckPostingId], references: [id])
+  offers       Offer[]
+  shipment     Shipment?
+  conversation Conversation?
+
+  @@unique([loadId, truckPostingId])
+  @@index([truckPostingId])
+  @@index([loadId, score])
+  @@index([status])
+}
+
+model Offer {
+  id                 String      @id @default(uuid(7)) @db.Uuid
+  matchId            String      @db.Uuid
+  loadId             String      @db.Uuid
+  truckPostingId     String      @db.Uuid
+  offeredBy          PartySide
+  offeredByCompanyId String      @db.Uuid
+  offeredByUserId    String      @db.Uuid
+  amount             Decimal     @db.Decimal(14, 2)
+  currency           Currency
+  validUntil         DateTime    @db.Timestamptz(3)
+  note               String?
+  status             OfferStatus @default(PENDING)
+  parentOfferId      String?     @db.Uuid
+  round              Int         @default(1)
+  aboveBudgetWarning Boolean     @default(false)
+  respondedAt        DateTime?   @db.Timestamptz(3)
+  respondedByUserId  String?     @db.Uuid
+  version            Int         @default(0)
+  createdAt          DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime    @updatedAt @db.Timestamptz(3)
+
+  match        Match        @relation(fields: [matchId], references: [id])
+  load         Load         @relation(fields: [loadId], references: [id])
+  truckPosting TruckPosting @relation(fields: [truckPostingId], references: [id])
+  parent       Offer?       @relation("OfferChain", fields: [parentOfferId], references: [id])
+  children     Offer[]      @relation("OfferChain")
+  shipment     Shipment?
+
+  @@index([matchId])
+  @@index([loadId])
+  @@index([truckPostingId])
+  @@index([offeredByCompanyId])
+  @@index([status, validUntil])
+  @@index([parentOfferId])
+}
+
+model Shipment {
+  id               String @id @default(uuid(7)) @db.Uuid
+  referenceNo      String @unique
+  loadId           String @db.Uuid
+  matchId          String @unique @db.Uuid
+  acceptedOfferId  String @unique @db.Uuid
+  truckPostingId   String @db.Uuid
+  shipperCompanyId String @db.Uuid
+  carrierCompanyId String @db.Uuid
+  vehicleId        String @db.Uuid
+  trailerId        String @db.Uuid
+  driverId         String @db.Uuid
+
+  currency                Currency
+  agreedAmount            Decimal         @db.Decimal(14, 2)
+  commissionModel         CommissionModel
+  commissionRate          Decimal         @db.Decimal(7, 6)
+  commissionAmount        Decimal         @db.Decimal(14, 2)
+  shipperCommissionAmount Decimal         @db.Decimal(14, 2)
+  carrierCommissionAmount Decimal         @db.Decimal(14, 2)
+  carrierPayout           Decimal         @db.Decimal(14, 2)
+  shipperTotal            Decimal         @db.Decimal(14, 2)
+  vatRate                 Decimal         @db.Decimal(5, 4)
+  commissionVatRate       Decimal         @db.Decimal(5, 4)
+  withholdingApplies      Boolean
+  withholdingRatio        Decimal         @db.Decimal(5, 4)
+  withholdingThreshold    Decimal         @db.Decimal(14, 2)
+  pricingConfigId         String          @db.Uuid
+  lockedFxRate            Decimal         @db.Decimal(18, 8)
+  lockedFxRateAt          DateTime        @db.Timestamptz(3)
+
+  plannedPickupAt   DateTime @db.Timestamptz(3)
+  plannedDeliveryAt DateTime @db.Timestamptz(3)
+  assignmentEndAt   DateTime @db.Timestamptz(3)
+  deadheadKm        Float
+
+  status               ShipmentStatus @default(ASSIGNED)
+  statusChangedAt      DateTime       @default(now()) @db.Timestamptz(3)
+  cancelledBy          CancelledBy?
+  cancellationReason   String?
+  cancellationFee      Decimal?       @db.Decimal(14, 2)
+  cancellationFeePayer PartySide?
+  deadheadCompensation Decimal?       @db.Decimal(14, 2)
+  noShow               Boolean        @default(false)
+  deliveredAt          DateTime?      @db.Timestamptz(3)
+  podSubmittedAt       DateTime?      @db.Timestamptz(3)
+  completedAt          DateTime?      @db.Timestamptz(3)
+  cancelledAt          DateTime?      @db.Timestamptz(3)
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  load           Load            @relation(fields: [loadId], references: [id])
+  match          Match           @relation(fields: [matchId], references: [id])
+  acceptedOffer  Offer           @relation(fields: [acceptedOfferId], references: [id])
+  truckPosting   TruckPosting    @relation(fields: [truckPostingId], references: [id])
+  shipperCompany Company         @relation("ShipmentShipper", fields: [shipperCompanyId], references: [id])
+  carrierCompany Company         @relation("ShipmentCarrier", fields: [carrierCompanyId], references: [id])
+  vehicle        Vehicle         @relation(fields: [vehicleId], references: [id])
+  trailer        Trailer         @relation(fields: [trailerId], references: [id])
+  driver         Driver          @relation(fields: [driverId], references: [id])
+  events         ShipmentEvent[]
+  ratings        Rating[]
+  invoices       Invoice[]
+  disputes       Dispute[]
+  conversation   Conversation?
+
+  @@index([loadId])
+  @@index([truckPostingId])
+  @@index([shipperCompanyId, status])
+  @@index([carrierCompanyId, status])
+  @@index([vehicleId])
+  @@index([trailerId])
+  @@index([driverId])
+  @@index([status, plannedPickupAt])
+}
+
+model ShipmentEvent {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  shipmentId  String            @db.Uuid
+  type        ShipmentEventType
+  fromStatus  ShipmentStatus?
+  toStatus    ShipmentStatus?
+  actorUserId String?           @db.Uuid
+  actorRole   String?
+  occurredAt  DateTime          @default(now()) @db.Timestamptz(3)
+  lat         Float?
+  lng         Float?
+  note        String?
+  payload     Json?
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id])
+
+  @@index([shipmentId, occurredAt])
+}
+
+model Dispute {
+  id                String          @id @default(uuid(7)) @db.Uuid
+  shipmentId        String          @db.Uuid
+  openedByCompanyId String          @db.Uuid
+  openedByUserId    String          @db.Uuid
+  reason            String
+  previousStatus    ShipmentStatus
+  status            DisputeStatus   @default(OPEN)
+  resolution        String?
+  outcome           ShipmentStatus?
+  faultParty        PartySide?
+  resolvedById      String?         @db.Uuid
+  resolvedAt        DateTime?       @db.Timestamptz(3)
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id])
+
+  @@index([shipmentId])
+  @@index([status])
+}
+
+model Rating {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  shipmentId     String    @db.Uuid
+  raterCompanyId String    @db.Uuid
+  ratedCompanyId String    @db.Uuid
+  raterSide      PartySide
+  raterUserId    String    @db.Uuid
+  stars          Int
+  punctuality    Int?
+  communication  Int?
+  cargoCare      Int?
+  documentation  Int?
+  priceHonesty   Int?
+  comment        String?
+  visibleAt      DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id])
+  rater    Company  @relation("RatingRater", fields: [raterCompanyId], references: [id])
+  rated    Company  @relation("RatingRated", fields: [ratedCompanyId], references: [id])
+
+  @@unique([shipmentId, raterCompanyId])
+  @@index([ratedCompanyId])
+  @@index([raterCompanyId])
+}
+
+// ─────────────────────── Mesajlaşma ve bildirim ───────────────────────
+
+model Conversation {
+  id               String              @id @default(uuid(7)) @db.Uuid
+  contextType      ConversationContext
+  matchId          String?             @unique @db.Uuid
+  shipmentId       String?             @unique @db.Uuid
+  shipperCompanyId String              @db.Uuid
+  carrierCompanyId String              @db.Uuid
+  lastMessageAt    DateTime?           @db.Timestamptz(3)
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+
+  match    Match?    @relation(fields: [matchId], references: [id])
+  shipment Shipment? @relation(fields: [shipmentId], references: [id])
+  messages Message[]
+
+  @@index([shipperCompanyId])
+  @@index([carrierCompanyId])
+}
+
+model Message {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  conversationId  String    @db.Uuid
+  senderUserId    String    @db.Uuid
+  senderCompanyId String    @db.Uuid
+  body            String
+  bodyOriginal    String?
+  contactMasked   Boolean   @default(false)
+  flagged         Boolean   @default(false)
+  readAt          DateTime? @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  sender       User         @relation(fields: [senderUserId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@index([senderUserId])
+  @@index([flagged])
+}
+
+model Notification {
+  id        String              @id @default(uuid(7)) @db.Uuid
+  userId    String              @db.Uuid
+  channel   NotificationChannel @default(IN_APP)
+  template  String
+  payload   Json                @default("{}")
+  dedupKey  String?
+  status    NotificationStatus  @default(QUEUED)
+  attempts  Int                 @default(0)
+  lastError String?
+  sentAt    DateTime?           @db.Timestamptz(3)
+  readAt    DateTime?           @db.Timestamptz(3)
+  createdAt DateTime            @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, readAt])
+  @@index([dedupKey])
+  @@index([status])
+}
+
+// ───────────────────────────── Mali ─────────────────────────────
+
+model Invoice {
+  id                 String        @id @default(uuid(7)) @db.Uuid
+  number             String        @unique
+  shipmentId         String        @db.Uuid
+  kind               InvoiceKind
+  issuerIsPlatform   Boolean       @default(false)
+  issuerCompanyId    String?       @db.Uuid
+  recipientCompanyId String        @db.Uuid
+  currency           Currency
+  subtotal           Decimal       @db.Decimal(14, 2)
+  vatRate            Decimal       @db.Decimal(5, 4)
+  vatAmount          Decimal       @db.Decimal(14, 2)
+  withholdingRatio   Decimal       @db.Decimal(5, 4)
+  withholdingAmount  Decimal       @db.Decimal(14, 2)
+  total              Decimal       @db.Decimal(14, 2)
+  payableAmount      Decimal       @db.Decimal(14, 2)
+  lines              Json
+  status             InvoiceStatus @default(DRAFT)
+  issuedAt           DateTime?     @db.Timestamptz(3)
+  createdAt          DateTime      @default(now()) @db.Timestamptz(3)
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id])
+
+  @@index([shipmentId])
+  @@index([recipientCompanyId])
+  @@index([issuerCompanyId])
+}
+
+// ─────────────────────────── Konfigürasyon ───────────────────────────
+
+model PricingConfig {
+  id                          String          @id @default(uuid(7)) @db.Uuid
+  effectiveFrom               DateTime        @db.Timestamptz(3)
+  commissionModel             CommissionModel
+  commissionRate              Decimal         @db.Decimal(7, 6)
+  splitShipperShare           Decimal         @default(0.5) @db.Decimal(5, 4)
+  minCommission               Decimal?        @db.Decimal(14, 2)
+  vatRate                     Decimal         @db.Decimal(5, 4)
+  commissionVatRate           Decimal         @db.Decimal(5, 4)
+  withholdingRatio            Decimal         @db.Decimal(5, 4)
+  withholdingThreshold        Decimal         @db.Decimal(14, 2)
+  commissionOnCancellationFee Boolean         @default(true)
+  /// { [TrailerType]: { minPerKm, maxPerKm } } TRY cinsinden
+  ratePerKmBands              Json
+  /// { adr: 1.25, tempControl: 1.2, international: 1.1, heavyPerTon: 0.01 }
+  multipliers                 Json
+  createdById                 String?         @db.Uuid
+  createdAt                   DateTime        @default(now()) @db.Timestamptz(3)
+
+  @@index([effectiveFrom])
+}
+
+model MatchingConfig {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  effectiveFrom    DateTime @db.Timestamptz(3)
+  wProximity       Float
+  wRouteFit        Float
+  wPriceFit        Float
+  wReliability     Float
+  wTimeFit         Float
+  wEquipmentFit    Float
+  wHistory         Float
+  threshold        Float
+  topN             Int
+  roadFactor       Float
+  avgTruckSpeedKmh Float
+  candidateLimit   Int
+  /// alt skor parametreleri (bkz. DOMAIN §6.3)
+  params           Json     @default("{}")
+  createdById      String?  @db.Uuid
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([effectiveFrom])
+}
+
+model CancellationPolicy {
+  id                  String   @id @default(uuid(7)) @db.Uuid
+  effectiveFrom       DateTime @db.Timestamptz(3)
+  /// [{ minHours, maxHours, feeRatio, atPickup, deadheadCompensation }]
+  tiers               Json
+  deadheadRatePerKm   Decimal  @db.Decimal(10, 2)
+  noShowGraceMinutes  Int      @default(120)
+  noShowSuspendStreak Int      @default(3)
+  createdById         String?  @db.Uuid
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([effectiveFrom])
+}
+
+model ExchangeRate {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  base        Currency
+  quote       Currency
+  rate        Decimal  @db.Decimal(18, 8)
+  source      String
+  effectiveAt DateTime @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([base, quote, effectiveAt])
+}
+
+model CountryRule {
+  countryCode            String  @id @db.Char(2)
+  name                   String
+  visaGroup              String?
+  vatExemptInternational Boolean @default(true)
+}
+
+// ───────────────────────────── Altyapı ─────────────────────────────
+
+model RefreshToken {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  userId       String    @db.Uuid
+  familyId     String    @db.Uuid
+  tokenHash    String
+  expiresAt    DateTime  @db.Timestamptz(3)
+  revokedAt    DateTime? @db.Timestamptz(3)
+  replacedById String?   @db.Uuid
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model OtpChallenge {
+  id         String     @id @default(uuid(7)) @db.Uuid
+  userId     String     @db.Uuid
+  purpose    OtpPurpose
+  codeHash   String
+  expiresAt  DateTime   @db.Timestamptz(3)
+  consumedAt DateTime?  @db.Timestamptz(3)
+  attempts   Int        @default(0)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, purpose])
+}
+
+model IdempotencyRecord {
+  id           String           @id @default(uuid(7)) @db.Uuid
+  key          String
+  userId       String           @db.Uuid
+  method       String
+  path         String
+  requestHash  String
+  state        IdempotencyState @default(IN_PROGRESS)
+  statusCode   Int?
+  responseBody Json?
+  expiresAt    DateTime         @db.Timestamptz(3)
+  createdAt    DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, key])
+  @@index([expiresAt])
+}
+
+model OutboxEvent {
+  id           String       @id @default(uuid(7)) @db.Uuid
+  type         String
+  payload      Json
+  status       OutboxStatus @default(PENDING)
+  attempts     Int          @default(0)
+  lastError    String?
+  availableAt  DateTime     @default(now()) @db.Timestamptz(3)
+  dispatchedAt DateTime?    @db.Timestamptz(3)
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([status, availableAt])
+}
+
+model ReferenceCounter {
+  prefix String
+  year   Int
+  value  Int    @default(0)
+
+  @@id([prefix, year])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  actorUserId String?  @db.Uuid
+  action      String
+  entityType  String
+  entityId    String?
+  before      Json?
+  after       Json?
+  ip          String?
+  userAgent   String?
+  requestId   String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@index([createdAt])
+}
+
+model CompanyStats {
+  companyId          String    @id @db.Uuid
+  completedAsCarrier Int       @default(0)
+  completedAsShipper Int       @default(0)
+  carrierCancelled   Int       @default(0)
+  shipperCancelled   Int       @default(0)
+  noShowCount        Int       @default(0)
+  consecutiveNoShows Int       @default(0)
+  ratingCount        Int       @default(0)
+  ratingSum          Int       @default(0)
+  lastNoShowAt       DateTime? @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id])
+}
+
+model CompanyPairStats {
+  shipperCompanyId  String    @db.Uuid
+  carrierCompanyId  String    @db.Uuid
+  completedCount    Int       @default(0)
+  goodCount         Int       @default(0)
+  lastDisputeLostAt DateTime? @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@id([shipperCompanyId, carrierCompanyId])
+  @@index([carrierCompanyId])
+}
